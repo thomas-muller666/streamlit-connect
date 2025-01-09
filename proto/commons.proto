@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package streamlit_grpc;
+
+option java_package = "io.streamlitconnect.server.grpc.gen";
+option java_outer_classname = "StreamlitCommonsProto";
+
+message ValueSingle {
+  oneof type {
+    float value_float = 1;
+    int32 value_int = 2;
+    string value_datetime = 3; // assumes ISO 8601 format
+  }
+}
+
+message ValueRange {
+  oneof type_from {
+    float from_value_float = 1;
+    int32 from_value_int = 2;
+    string from_value_datetime = 3; // assumes ISO 8601 format
+  }
+  oneof type_to {
+    float to_value_float = 4;
+    int32 to_value_int = 5;
+    string to_value_datetime = 6; // assumes ISO 8601 format
+  }
+}
+
+message IntOrFloat {
+  oneof value {
+    int32 i = 1;
+    float f = 2;
+  }
+}

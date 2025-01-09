@@ -1,0 +1,40 @@
+syntax = "proto3";
+import "actions.proto";
+
+package streamlit_grpc;
+
+option java_package = "io.streamlitconnect.server.grpc.gen";
+option java_outer_classname = "StreamlitNavigationProto";
+
+// Service for getting the navigation menu from the server
+service StreamlitNavigationService {
+	rpc GetNavigation(StreamlitNavigationRequest) returns (StreamlitNavigation);
+}
+
+message StreamlitNavigationRequest {
+  string session_id = 1; // Unique ID for the Streamlit session
+	int32 seq = 2; // The sequence number of the request
+  string app = 3;
+  repeated Action actions = 4;
+}
+
+message StreamlitNavigation {
+	enum Location {
+		SIDEBAR = 0;
+		HIDDEN = 1;
+	}
+	repeated MenuItem items = 1; // no items for a single-page app returning NULL for NaviationMenu
+	Location location = 2;
+}
+
+message NavigationEntry {	
+	string page = 1;
+	string title = 2;
+	string icon = 3;
+	bool is_default = 4;
+}
+
+message MenuItem {
+	string header = 1;
+	repeated NavigationEntry entries = 2;
+}

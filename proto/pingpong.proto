@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package streamlit_grpc;
+
+option java_package = "io.streamlitconnect.server.grpc.gen";
+option java_outer_classname = "StreamlitPingPongProto";
+
+// The PingPong service definition.
+service StreamlitPingPongService {
+  // Sends a ping and receives a pong.
+  rpc Ping (PingRequest) returns (PongResponse);
+}
+
+// The Ping request message
+message PingRequest {
+  string session_id = 1; // Unique ID for the Streamlit session
+}
+
+// The Pong response message 
+message PongResponse {
+  string session_id = 1; // Unique ID for the Streamlit session
+}

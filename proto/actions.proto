@@ -1,0 +1,114 @@
+syntax = "proto3";
+import "commons.proto";
+
+package streamlit_grpc;
+
+option java_package = "io.streamlitconnect.server.grpc.gen";
+option java_outer_classname = "StreamlitActionsProto";
+
+
+// Union of possible actions
+message Action {
+  oneof action {
+    ButtonAction button_action = 1;
+    CheckboxAction checkbox_action = 2;
+    ToggleAction toggle_action = 3;
+    RadioAction radio_action = 4;
+    SelectboxAction selectbox_action = 5;
+    MultiselectAction multiselect_action = 6;
+    SelectSliderAction select_slider_action = 7;
+    DateInputAction date_input_action = 8;
+    TimeInputAction time_input_action = 9;
+    NumberInputAction number_input_action = 10;
+    TextInputAction text_input_action = 11;
+    SliderAction slider_action = 12;
+  }
+}
+
+message ButtonAction {
+  string key = 1;
+  repeated string args = 2;
+  map<string, string> kwargs = 3;
+}
+
+message CheckboxAction {
+  string key = 1;
+  bool value = 2;
+  repeated string args = 3; // Callback arguments
+  map<string, string> kwargs = 4; // Callback key/value pairs
+}
+
+message ToggleAction {
+  string key = 1;
+  bool value = 2;
+  repeated string args = 3; // Callback arguments
+  map<string, string> kwargs = 4; // Callback key/value pairs
+}
+
+message RadioAction {
+  string key = 1;
+  int32 index = 2;
+  repeated string args = 3; // Callback arguments
+  map<string, string> kwargs = 4; // Callback key/value pairs
+}
+
+message SelectboxAction {
+  string key = 1;
+  int32 index = 2;
+  repeated string args = 3; // Callback arguments
+  map<string, string> kwargs = 4; // Callback key/value pairs
+}
+
+message MultiselectAction {
+  string key = 1;
+  repeated int32 selected_indices = 2;
+  repeated string args = 3; // Callback arguments
+  map<string, string> kwargs = 4; // Callback key/value pairs
+}
+
+message SelectSliderAction {
+  string key = 1;
+  int32 lower_index = 2;
+  int32 upper_index = 3;
+  repeated string args = 4; // Callback arguments
+  map<string, string> kwargs = 5; // Callback key/value pairs
+}
+
+message DateInputAction {
+  string key = 1;
+  string from_date = 2; // Format: "YYYY-MM-DD"
+  string to_date = 3; // Format: "YYYY-MM-DD"
+  repeated string args = 4; // Callback arguments
+  map<string, string> kwargs = 5; // Callback key/value pairs
+}
+
+message TimeInputAction {
+  string key = 1;
+  string value = 2; // Format: "HH:mm:ss"
+  repeated string args = 4; // Callback arguments
+  map<string, string> kwargs = 5; // Callback key/value pairs
+}
+
+message NumberInputAction {
+  string key = 1;
+  IntOrFloat value = 2;
+  repeated string args = 3; // Callback arguments
+  map<string, string> kwargs = 4; // Callback key/value pairs
+}
+
+message TextInputAction {
+  string key = 1;
+  string value = 2;
+  repeated string args = 3; // Callback arguments
+  map<string, string> kwargs = 4; // Callback key/value pairs
+}
+
+message SliderAction {
+  string key = 1;
+  oneof value_single_or_range {
+    ValueSingle value_single = 2;
+    ValueRange value_range = 3;
+  }
+  repeated string args = 4; // Callback arguments
+  map<string, string> kwargs = 5; // Callback key/value pairs
+}

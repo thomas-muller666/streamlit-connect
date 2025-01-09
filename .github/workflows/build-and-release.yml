@@ -1,0 +1,318 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - release
+      - devops-test
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+
+    outputs:
+      VERSION_TAG: ${{ steps.build.outputs.VERSION_TAG }}
+      PROJECT_VERSION: ${{ steps.build.outputs.PROJECT_VERSION }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+
+      - name: Set Up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: '21'
+          distribution: 'adopt'
+
+      - name: Build and tag
+        id: build
+        run: |
+          cd java
+          git fetch --tags
+          
+          MAJOR_MINOR=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout | sed -E 's/([0-9]+\.[0-9]+).*/\1/')
+          echo "Extracted [major.minor] version: $MAJOR_MINOR"          
+          
+          LATEST_TAG=$(git tag -l "v*" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -rV | head -n 1)
+          echo "Latest tag: $LATEST_TAG"          
+          
+          if [ -z "$LATEST_TAG" ]; then
+              PATCH=0
+          else
+              TAG_MAJOR_MINOR=$(echo $LATEST_TAG | sed -E 's/v([0-9]+\.[0-9]+)\.[0-9]+/\1/')
+              TAG_PATCH=$(echo $LATEST_TAG | sed -E 's/v[0-9]+\.[0-9]+\.([0-9]+)/\1/')
+              if [ "$(printf '%s\n' "$TAG_MAJOR_MINOR" "$MAJOR_MINOR" | sort -rV | head -n 1)" != "$MAJOR_MINOR" ]; then
+                  echo "Current version is less than the last tag. Aborting."
+                  exit 1
+              elif [ "$MAJOR_MINOR" = "$TAG_MAJOR_MINOR" ]; then
+                  PATCH=$(($TAG_PATCH + 1))
+                  echo "Incremented patch version: $PATCH"
+              else
+                  PATCH=0
+                  echo "Patch version reset to 0"
+              fi
+          fi
+          
+          PROJECT_VERSION="$MAJOR_MINOR.$PATCH"
+          echo "New project version: $PROJECT_VERSION"
+          
+          echo "-----> Packaging"
+          mvn --quiet package -Drevision=$PATCH -DskipTests=true -Dmaven.javadoc.skip=true
+          echo "Packaging completed"          
+          
+          echo "-----> Creating release pom"
+          mvn --quiet -Drevision=$PATCH gplus:execute
+          
+          VERSION_TAG=v$PROJECT_VERSION          
+          echo "-----> Tagging repository: $VERSION_TAG"
+          git tag "$VERSION_TAG"
+          # git push origin "$VERSION_TAG"
+          
+          echo "VERSION_TAG=$VERSION_TAG" >> $GITHUB_OUTPUT
+          echo "PROJECT_VERSION=$PROJECT_VERSION" >> $GITHUB_OUTPUT
+          
+          echo "::set-output name=VERSION_TAG::$VERSION_TAG"
+          echo "::set-output name=PROJECT_VERSION::$PROJECT_VERSION"
+
+      - name: Push to the repo
+        uses: ad-m/github-push-action@v0.8.0
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tags: true
+
+      - name: Upload JAR file
+        uses: actions/upload-artifact@v2
+        with:
+          name: app-jar
+          path: java/target/*.jar
+          if-no-files-found: error
+
+      - name: Upload pom-release file
+        uses: actions/upload-artifact@v2
+        with:
+          name: release-pom
+          path: java/target/pom.xml
+          if-no-files-found: error
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install grpcio-tools
+
+      - name: Generate Python proto
+        run: |
+          cd server
+          chmod +x gen-proto.sh
+          ./gen-proto.sh
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Build Docker Image
+        run: |
+          cd server
+          docker build -t streamlit-connect -f Dockerfile .
+          docker save streamlit-connect:latest > streamlit-connect.tar
+          
+      - name: Upload Docker image as artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: docker-image
+          path: server/streamlit-connect.tar
+
+  push-to-registry:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: docker-image
+
+      - name: Load Docker image
+        run: |
+          docker load < streamlit-connect.tar
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Tag Image
+        run: |
+          docker tag streamlit-connect:latest ${{ secrets.DOCKER_USERNAME }}/streamlit-connect:${{ needs.build.outputs.PROJECT_VERSION }}
+          docker tag streamlit-connect:latest ${{ secrets.DOCKER_USERNAME }}/streamlit-connect:latest
+
+      - name: Push Docker Image
+        run: |
+          docker push ${{ secrets.DOCKER_USERNAME }}/streamlit-connect:${{ needs.build.outputs.PROJECT_VERSION }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/streamlit-connect:latest
+
+  create-release:
+    needs: [build,push-to-registry]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download JAR file
+        uses: actions/download-artifact@v2
+        with:
+          name: app-jar
+          path: ./
+
+      - name: Download release POM
+        uses: actions/download-artifact@v2
+        with:
+          name: release-pom
+          path: ./
+
+      - name: Debug Output
+        run: |
+          echo "VERSION_TAG from build job: ${{ needs.build.outputs.VERSION_TAG }}"
+          echo "PROJECT_VERSION from build job: ${{ needs.build.outputs.PROJECT_VERSION }}"
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.build.outputs.VERSION_TAG }}
+          release_name: Release ${{ needs.build.outputs.PROJECT_VERSION }}
+          body: |
+            ## Installation
+            To install the JAR file included in this release to your local Maven repository, use the following Maven command:            
+            ```sh
+            mvn install:install-file \
+              -Dfile=<path-to-jar-file> \
+              -DpomFile=<path-to-pom-file> \
+              -DgroupId=io.streamlitconnect \
+              -DartifactId=streamlit-connect \
+              -Dversion=${{ needs.build.outputs.PROJECT_VERSION }} \
+              -Dpackaging=jar 
+            ```
+            Ensure to replace the placeholders with the actual path to the downloaded JAR file and the release pom file.
+            
+            ## Gradle Dependency
+            To use StreamlitConnect in a Gradle project, add this to your `build.gradle` file's dependencies block: 
+            ```groovy
+            implementation 'io.streamlitconnect:streamlit-connect:${{ needs.build.outputs.PROJECT_VERSION }}'
+            ```
+            
+            ## Maven Dependency
+            To use StreamlitConnect in a Maven project, add this to your `pom.xml` file's dependencies block:
+            ```xml
+            <dependency>
+              <groupId>io.streamlitconnect</groupId>
+              <artifactId>streamlit-connect</artifactId>
+              <version>${{ needs.build.outputs.PROJECT_VERSION }}</version>
+            </dependency>
+            ```
+            
+            ## Running the StreamlitConnect server in Docker
+            The StreamlitConnect (Python) server is a necessary intermediary between your Streamlit Java app and the front-end. 
+            This server acts as a gRPC client, and your Java Streamlit application is executed alongside a gRPC server. Every 
+            request from the front-end is sent to the StreamlitConnect server, which in turn sends a custom gRPC protocol request 
+            to your Java application. The Java application processes the request and sends the response back to the Streamlit server, 
+            which then (after some processing) sends the response back to the front-end.
+            
+            Seen from the front-end, it seems like you're running any old Streamlit app, but int the background, the Java application
+            is doing the heavy lifting, whilst the Streamlit backend (StreamlitConnect) is acting as a middleman, translating the
+            front-end Streamlit requests to gRPC requests for the Java application.
+            
+            To run the StreamlitConnect server in Docker, use the following command:
+            ```sh
+            docker run -d -p 8501:8501 --name streamlit-connect ttm6666/streamlit-connect:${{ needs.build.outputs.PROJECT_VERSION }}
+            ```
+            
+            The Docker application can be configured using the following environment variables:
+            - `STREAMLIT_CONNECT_APP_HOST`: The host where the Java (Streamlit) application is running. Default is `host.docker.internal`.
+            - `STREAMLIT_CONNECT_APP_PORT`: The port where the Java (Streamlit) application is running. Default is `50051` (default gRPC port).
+            - `LOG_LEVEL`: The log level of the Streamlit server. Default is `INFO`.
+            
+            Environment variables can be set using the `-e` flag in the `docker run` command. For example, to set the log level to `DEBUG`, 
+            use the following command:
+            ```sh
+            docker run -d -p 8501:8501 --name streamlit-connect -e LOG_LEVEL=DEBUG ttm6666/streamlit-connect:${{ needs.build.outputs.PROJECT_VERSION }}
+            ```
+            
+            If you are running a bare Docker installation e.g. on WSL2, Mac or Linux, you have to use the actual 
+            IP-address of the host machine instead of `host.docker.internal` (which is specific to Docker Desktop). Also note that 
+            port 50051 is the default port for the gRPC server in the Java application. If you change this port (using the 
+            `io.streamlitconnect.Config` class), you have to adjust the `STREAMLIT_CONNECT_APP_PORT` environment variable accordingly.
+            
+            After starting your java application and the Docker container with the StreamlitConnect server, you can access your 
+            Streamlit app at `http://localhost:8501`. Note that the StreamlitConnect server is running on port 8501 (inside Docker), 
+            which is the default port for Streamlit apps.
+
+          draft: false
+          prerelease: true
+
+      - name: Upload Jar
+        id: upload_release_jar
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./streamlit-connect-${{ needs.build.outputs.PROJECT_VERSION }}.jar
+          asset_name: streamlit-connect-${{ needs.build.outputs.PROJECT_VERSION }}.jar
+          asset_content_type: application/java-archive
+
+      - name: Upload Release POM
+        id: upload_release_pom
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./pom.xml
+          asset_name: pom.xml
+          asset_content_type: application/xml
+
+  publish-docs:
+    needs: create-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: '21'
+          distribution: 'adopt'
+
+      - name: Generate Javadoc
+        run: |
+          cd java
+          mvn javadoc:javadoc
+
+      - name: Prepare gh-pages content
+        run: |
+          cd java
+          cp -r ./src/main/resources/site/* .        
+          mkdir -p ./apidocs
+          cp -r ./target/site/apidocs/* ./apidocs/      
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./
+          keep_files: false
+          allow_empty_commit: false
+          force_orphan: true
+

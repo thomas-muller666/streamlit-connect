@@ -1,0 +1,365 @@
+syntax = "proto3";
+import "commons.proto";
+import "actions.proto";
+
+package streamlit_grpc;
+
+option java_package = "io.streamlitconnect.server.grpc.gen";
+option java_outer_classname = "StreamlitOperationsProto";
+
+// Service for getting the Streamlit operations to execute
+service StreamlitOperationService {
+  // Client requests a stream of operations
+  rpc GetOperations(StreamlitOperationsRequest) returns (stream StreamlitOperation);
+}
+
+// Request message for getting Streamlit actions
+message StreamlitOperationsRequest {
+  string session_id = 1; // Unique ID for the Streamlit session
+  int32 seq = 2; // The sequence number of the request
+  string app = 3;
+  string page = 4; // The current page or NULL for default/main page - see NAVIGATION doc
+
+  // A list of actions - representing state-changes, e.g. button click
+  // Checkbox check, form posting etc
+  repeated Action actions = 5;
+}
+
+// Streamlit operation message
+message StreamlitOperation {
+  oneof operation {
+
+    // Control
+    EndOp endOp = 1;
+    RerunOp rerunOp = 2;
+    StopOp stopOp = 3;
+    TerminateSessionOp terminateSessionOp = 4;
+
+    // Output
+    TitleOp titleOp = 5;
+    HeaderOp headerOp = 6;
+    SubheaderOp subheaderOp = 7;
+    CaptionOp captionOp = 8;
+    CodeOp codeOp = 9;
+    DividerOp dividerOp = 10;
+    LatexOp latexOp = 11;
+    TextOp textOp = 12;
+    MarkdownOp markdownOp = 13;
+
+    // Input
+    ButtonOp buttonOp = 14;
+    CheckboxOp checkboxOp = 15;
+    ToggleOp toggleOp = 16;
+    RadioOp radioOp = 17;
+    SelectboxOp selectboxOp = 18;
+    MultiselectOp multiselectOp = 19;
+    SelectSliderOp selectSliderOp = 20;
+    DateInputOp dateInputOp = 21;
+    TimeInputOp timeInputOp = 22;
+    PageLinkOp pageLinkOp = 23;
+    SwitchPageOp switchPageOp = 24;
+    NumberInputOp numberInputOp = 25;
+    TextInputOp textInputOp = 26;
+    SliderOp sliderOp = 27;
+    WriteStreamChunkOp writeStreamChunkOp = 28;
+
+    // Containers
+    InnerContainerOp innerContainerOp = 50;
+    ExpandableContainerOp expandableContainerOp = 51;
+    TabContainersOp tabContainersOp = 52;
+    ColumnContainersOp columnContainersOp = 53;
+    PlaceholderContainerOp placeholderContainerOp = 54;
+  }
+}
+
+enum LabelVisibility {
+  VISIBLE = 0;
+  HIDDEN = 1;
+  COLLAPSED = 2;
+}
+
+enum DateFormat {
+  YYYYMMDD = 0;
+  DDMMYYYY = 1;
+  MMDDYYYY = 2;
+}
+
+enum DateSeparator {
+  SLASH = 0;
+  DASH = 1;
+  DOT = 2;
+}
+
+enum TextInputType {
+  DEFAULT = 0;
+  PASSWORD = 1;
+}
+
+message WidgetProperties {
+  string container = 1;
+  string key = 2;
+  string label = 3;
+  string help = 4;
+  bool disabled = 5;
+  LabelVisibility label_visibility = 6;
+  bool use_container_width = 7;
+}
+
+// To signal the end of the operations stream
+message EndOp {
+  bool terminate_session = 1; // Instruction to also terminate the session
+  bool cancelled = 2; // The corresponding request got cancelled by the server
+}
+
+message RerunOp {}
+
+message StopOp {
+  string message = 1;
+}
+
+message TerminateSessionOp {
+
+}
+
+// Containers are addressed with a unique key for the container, possible followed by a tab name
+// for tab container, or column number for column containers - surrounded by parenthesis.
+// Note that the tabname is an internal key, not the actual tab title.
+// Example: myInnerContainer123, myTabContainer123(tab2), myColumnContainer123(1)
+
+message InnerContainerOp {
+  string parent = 1;
+  string key = 2;
+  int32 height = 3;
+  bool border = 4;
+}
+
+message ExpandableContainerOp {
+  string parent = 1;
+  string key = 2;
+  string label = 3;
+  bool expanded = 4;
+  string icon = 5;
+}
+
+message TabContainersOp {
+  string parent = 1;
+  repeated string keys = 2;
+  repeated string tabs = 3;
+}
+
+message ColumnContainersOp {
+  enum Gap {
+    SMALL = 0;
+    MEDIUM = 1;
+    LARGE = 2;
+  }
+
+  enum VerticalAlignment {
+    TOP = 0;
+    CENTER = 1;
+    BOTTOM = 2;
+  }
+
+  string parent = 1;
+  repeated string keys = 2;
+  repeated float widths = 3;
+  Gap gap = 4;
+  VerticalAlignment vertical_alignment = 5;
+}
+
+message PlaceholderContainerOp {
+  string parent = 1;
+  string key = 2;
+  bool empty = 3;
+}
+
+// Output operations
+
+message TitleOp {
+  string container = 1; // The container key, .e.g "root", "sidebar", "myColumnContainer(0)", myTabsContainer(myTabKey) - "root" of not present.
+  string body = 2;
+  string help = 3;
+  string anchor = 4;
+}
+
+message HeaderOp {
+  string container = 1;
+  string body = 2;
+  string help = 3;
+  string anchor = 4;
+  bool divider = 5;
+}
+
+message SubheaderOp {
+  string container = 1;
+  string body = 2;
+  string help = 3;
+  string anchor = 4;
+  bool divider = 5;
+}
+
+message CaptionOp {
+  string container = 1;
+  string body = 2;
+  string help = 3;
+  bool unsafe_allow_html = 4;
+}
+
+message CodeOp {
+  string container = 1;
+  string body = 2;
+  string language = 3;
+  bool line_numbers = 4;
+}
+
+message DividerOp {
+  string container = 1;
+}
+
+message LatexOp {
+  string container = 1;
+  string body = 2;
+  string help = 3;
+}
+
+message TextOp {
+  string container = 1;
+  string body = 2;
+  string help = 3;
+}
+
+message MarkdownOp {
+  string container = 1;
+  string body = 2;
+  string help = 3;
+  bool unsafe_allow_html = 4;
+}
+
+message WriteStreamChunkOp {
+  string container = 1;
+  string key = 2;
+  string body = 3;
+  bool is_last = 4;
+}
+
+// Input operations
+
+message ButtonOp {
+  enum Type {
+    PRIMARY = 0;
+    SECONDARY = 1;
+  }
+  WidgetProperties widget_props = 1;
+  Type type = 2;
+  string url = 3; // if set, this is a link-button
+}
+
+message CheckboxOp {
+  WidgetProperties widget_props = 1;
+  bool value = 2;
+}
+
+message ToggleOp {
+  WidgetProperties widget_props = 1;
+  bool value = 2;
+}
+
+message RadioOp {
+  WidgetProperties widget_props = 1;
+  repeated string options = 2;
+  repeated string captions = 3;
+  int32 index = 4;
+  bool horizontal = 5;
+}
+
+message SelectboxOp {
+  WidgetProperties widget_props = 1;
+  repeated string options = 2;
+  int32 index = 3;
+  string placeholder = 4;
+}
+
+message MultiselectOp {
+  WidgetProperties widget_props = 1;
+  repeated string options = 2;
+  repeated int32 selected_indices = 3;
+  string placeholder = 4;
+}
+
+message SelectSliderOp {
+  WidgetProperties widget_props = 1;
+  repeated string options = 2;
+  int32 lower_index = 3;
+  int32 upper_index = 4;
+}
+
+message SliderOp {
+  WidgetProperties widget_props = 1;
+  oneof min_value {
+    float min_value_float = 2;
+    int32 min_value_int = 3;
+    string min_value_datetime = 4; // assumes ISO 8601 format
+  }
+  oneof max_value {
+    float max_value_float = 5;
+    int32 max_value_int = 6;
+    string max_value_datetime = 7; // assumes ISO 8601 format
+  }
+  oneof step {
+    float step_float = 8;
+    int32 step_int = 9;
+    int64 step_time_seconds = 10; // represents timedelta in seconds
+  }
+  oneof value_single_or_range {
+    ValueSingle value_single = 11;
+    ValueRange value_range = 12;
+  }
+  string format = 13;
+}
+
+message DateInputOp {
+  WidgetProperties widget_props = 1;
+  string from_date = 2; // Format: "YYYY-MM-DD"
+  string to_date = 3; // Format: "YYYY-MM-DD"
+  string min_date = 4; // Format: "YYYY-MM-DD"
+  string max_date = 5; // Format: "YYYY-MM-DD"
+  bool today = 6; // only used if min/max values are omitted and no dates are chosen
+  DateFormat date_format = 7;
+  DateSeparator date_separator = 8;
+}
+
+message TimeInputOp {
+  WidgetProperties widget_props = 1;
+  string value = 2; // Format: "HH:mm:ss"
+  int32 step_seconds = 3;
+}
+
+message PageLinkOp {
+  WidgetProperties widget_props = 1;
+  string page = 2;
+  string icon = 3;
+}
+
+message NumberInputOp {
+  WidgetProperties widget_props = 1;
+  IntOrFloat min = 2;
+  IntOrFloat max = 3;
+  IntOrFloat step = 4;
+  IntOrFloat value = 5;
+  string format = 6;
+  string placeholder = 7;
+}
+
+message TextInputOp {
+  WidgetProperties widget_props = 1;
+  string value = 2;
+  TextInputType type = 3;
+  string autocomplete = 4;
+  string placeholder = 5;
+  int32 max_chars = 6;
+}
+
+message SwitchPageOp {
+  string page = 1;
+}
+

@@ -1,0 +1,3 @@
+[server]
+host = "${streamlit_connect_app_host:localhost}"
+port = "${streamlit_connect_app_port:50051}"
